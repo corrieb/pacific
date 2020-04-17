@@ -15,12 +15,12 @@ I have been deeply involved in this project and have contributed to the architec
 ## Useful Links:
 
 ### Documentation 
-User documentation https://docs.vmware.com/en/VMware-vSphere/7.0/vmware-vsphere-with-kubernetes
+- User documentation https://docs.vmware.com/en/VMware-vSphere/7.0/vmware-vsphere-with-kubernetes
 
 ### Blogs
-Blog on scheduling native pods https://frankdenneman.nl/2020/03/20/scheduling-vsphere-pods/
-Blog on Supervisor namespace https://frankdenneman.nl/2020/04/01/vsphere-supervisor-namespace/
-Home lab https://www.virtuallyghetto.com/2020/04/automated-vsphere-7-and-vsphere-with-kubernetes-lab-deployment-script.html
+- Blog on scheduling native pods https://frankdenneman.nl/2020/03/20/scheduling-vsphere-pods/
+- Blog on Supervisor namespace https://frankdenneman.nl/2020/04/01/vsphere-supervisor-namespace/
+- Home lab https://www.virtuallyghetto.com/2020/04/automated-vsphere-7-and-vsphere-with-kubernetes-lab-deployment-script.html
 
 ### Related code
-The VM Operator API https://github.com/vmware-tanzu/vm-operator-api
+- The VM Operator API https://github.com/vmware-tanzu/vm-operator-api
