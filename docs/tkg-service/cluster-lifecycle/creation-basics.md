@@ -1,3 +1,20 @@
+- [The Basics](#the-basics)
+  * [The 3 Layer Cake](#the-3-layer-cake)
+  * [The Detailed View](#the-detailed-view)
+    + [GCM Layer](#gcm-layer)
+      - [CAPI / CAPW object generation](#capi--capw-object-generation)
+      - [TanzuKubernetesCluster](#tanzukubernetescluster)
+    + [CAPI / CAPW Layer](#capi--capw-layer)
+      - [CAPBK Controller](#capbk-controller)
+      - [CAPI Controller](#capi-controller)
+      - [CAPW Controller](#capw-controller)
+      - [Notes About Worker Machines](#notes-about-worker-machines)
+    + [VM Operator Layer](#vm-operator-layer)
+      - [VirtualMachine](#virtualmachine)
+      - [VirtualMachineImage](#virtualmachineimage)
+      - [VirtualMachineClass](#virtualmachineclass)
+      - [Persistent Volumes](#persistent-volumes)
+
 # The Basics
 
 This document covers the fundamental concepts, controllers and objects that underpin cluster creation in Tanzu Kubernetes Grid (TKG) Service.
