@@ -5,7 +5,7 @@ This document covers the fundamental concepts, controllers and objects that unde
 The User Documentation on how to provision a TanzuKubernetesCluster is [here](https://docs.vmware.com/en/VMware-vSphere/7.0/vmware-vsphere-with-kubernetes/GUID-0C2A88B3-6CB8-4495-B707-43710B94C7F6.html)
 
 A quick glossary before we start:
-- **TKG Service** is a feature of vSphere with Kubernetes that stands up virtualized "Guest Clusters" using ClusterAPI
+- **TKG Service** is a feature of vSphere with Kubernetes that stands up virtualized "Guest Clusters" using [ClusterAPI](https://github.com/kubernetes-sigs/cluster-api)
 - **Guest Cluster** is an upstream virtualized Kubernetes Cluster that is created and managed declaratively using a TKC
 - **Supervisor Cluster** refers to the Kubernetes API built into vSphere that uses ESXi hosts as nodes
 - **Project Pacific** is the codename of the Project that was launched as vSphere 7.0 with Kubernetes
@@ -20,7 +20,7 @@ As such, if you want to troubleshoot TKG Service Lifecycle issues, you'll spend 
 ## The 3 Layer Cake
 At its most basic, cluster lifecycle is managed by 3 layers: **The Guest Cluster Manager (GCM)** layer, the **ClusterAPI (CAPI)** layer and the **VM Operator** layer.
 
-![alt text](images/3-layer-cake.png "3 Layer Cake")
+<img src="images/3-layer-cake.png" width="499" height="619" />
 
 **ClusterAPI** as the middle tier is the foundation around which everything else functions. The **VM Operator** layer supplies the plumbing and the **GCM layer** provides decoration and specialization. Spec is reconciled down the layers and Status is published back up the layers.
 
@@ -34,23 +34,23 @@ The VM Operator layer is the declarative interface to vSphere. It creates object
 
 As with everything, the reality is much more involved, although it follows the basic principle laid out above.
 
-![alt text](images/tkg-service-lifecycle-detail.png "Lifecycle Detail")
+<img src="images/tkg-service-lifecycle-detail.png" />
 
 ### GCM Layer
 
 As you can see at the bottom of this diagram, the TanzuKubernetesCluster is reconciled by the GCM controller.
 
-_Note that each controller typically has 3 instances running with leader election enabled, so when we say "the controller" for any of these, we mean whichever one of 3 controller that is currently acting as leader._
+_Note that each controller typically has 3 instances running with leader election enabled, so when we say "the controller" for any of these, we mean whichever one of 3 controllers that is currently acting as leader._
 
 #### CAPI / CAPW object generation
 
-GCM has to generate all of the input for the Cluster API layer. This is currently logically grouped as 3 YAML files.
+GCM has to generate all of the input for the ClusterAPI layer. This is currently logically grouped as 3 YAML files.
 
 - **Cluster.yaml** contains the definition of the Cluster itself. Note that it's split into two objects - the CAPI Cluster and the WCPCluster that augments it.
 - **Controlplane.yaml** contains the definition of the cluster control plane components. This consists of the following:
   - A CAPI Machine. This is the baseline definition of a control plane node, containing spec and status common to all implementations
   - A WCPMachine. This is the specialization of a control plane node from the vSphere standpoint. This is where vSphere value add and status for a node can be defined.
-  - A KubeadmConfig. We use kubeadm to stand up the cluster. KubeadmConfig provides the means to define in abstract terms what we want from kubeadm.
+  - A KubeadmConfig. We use [kubeadm](https://github.com/kubernetes/kubeadm) to stand up the cluster. KubeadmConfig provides the means to define in abstract terms what we want from kubeadm.
   - Note that the Control Plane will have one of each of these objects for each control plane node
 - **MachineDeployment.yaml** contains the definition of the worker components. This uses a distinct approach from the control plane.
   - A MachineDeployment is a Kubernetes Deployment object that references a MachineSet. 
@@ -64,10 +64,7 @@ The raw YAML that's created only actually exists in memory in the controllers. I
 
 Use a kubectl client authenticated with the Supervisor cluster
 
-<p>
-<details>
-<summary>This example shows a cluster with 3 control plane nodes and 3 worker nodes</summary>
-<pre><code>
+This example shows a cluster with 3 control plane nodes and 3 worker nodes:
 
 ```
 $ kubectl get clusters,wcpclusters,machines,wcpmachines,kubeadmconfigs,machinedeployments,machinesets,wcpmachinetemplates,kubeadmconfigtemplates -A
@@ -114,13 +111,10 @@ ben-test    wcpmachinetemplate.infrastructure.cluster.vmware.com/test-cluster-wo
 NAMESPACE   NAME                                                                          AGE
 ben-test    kubeadmconfigtemplate.bootstrap.cluster.x-k8s.io/test-cluster-workers-mg88z   6h49m
 ```
-</code></pre>
-</details>
-</p>
 
 #### TanzuKubernetesCluster
 
-The TanzuKubernetesCluster (TKC) is both the Specification for the cluster and shows detailed Status of how the cluster lifecycle is progressing. We will look in more detail at TKC in another document.
+The TanzuKubernetesCluster (TKC) is both the Specification for the cluster and shows detailed status of how the cluster lifecycle is progressing. We will look in more detail at TKC in another document.
 
 ### CAPI / CAPW Layer
 
@@ -130,10 +124,7 @@ In abstract terms, the objects generated above provide a blueprint for the CAPI 
 
 The CAPBK controller is the simplest, so this is a good place to start. Its job is to reconcile each KubeadmConfig object and apply it to some kind of node configuration protocol. In this particular instance, our configuration protocol is [cloud-init](https://cloud-init.io/), which is a universal means of configuring VMs. So the CAPBK controller's job is to create cloud-init config for each node. 
 
-<p>
-<details>
-<summary>It writes this config in base64 encoded format into the Status of each KubeadmConfig object</summary>
-<pre><code>
+It writes this config in base64 encoded format into the Status of each KubeadmConfig object:
 
 ```
 $ kubectl describe kubeadmconfig.bootstrap.cluster.x-k8s.io/test-cluster-control-plane-jwsx7
@@ -195,15 +186,11 @@ write_files:
       MIICyzCCAbOgAwIBAgIBADANBgkqhkiG9w0BAQsFADAVMRMwEQYDVQQDEwprdWJl
 ...
 ```
-</code></pre>
-</details>
-</p>
-
 A few things to note here:
 
 - As you can see from the above, the config provided to KubeadmConfig is extensive, as is the cloud-init configuration.
 - Note the presence of certificates in the cloud-init data. As the diagram shows, these are also written out by the CABPK controller
-- Finally, note the use of jinja templating. This is done so that some parameters of the cloud-init script (such as IP address) can be late-bound on the node instance itself.
+- Finally, note the use of [jinja](http://jinja.palletsprojects.com/) templating. This is done so that some parameters of the cloud-init script (such as IP address) can be late-bound on the node instance itself.
 
 Once we look at node debugging, you'll see this exact same cloud-init config being processed by the various initialization stages on the node.
 
@@ -274,7 +261,7 @@ There are few interesting things worth calling out here:
   - They also ensure that deletion cascades down through the owner reference hierarchy. If TKC is deleted, all of its children are also deleted
 - You'll see this is where the Cluster Network settings are specified
 - The infrastructure reference to the WCPCluster is how the two are connected. WCPCluster also has an owner reference back to the Cluster
-- APIEndpoints is typically just one value - the IP address for connecting to the API Server. It can in theory be multiple values, but only if there isn't a load balancer
+- `APIEndpoints` is typically just one value - the IP address for connecting to the API Server. It can in theory be multiple values, but only if there isn't a load balancer
 - The rest of the status is just to indicate where the Cluster is in terms of its progress. That is all summarized in TKC by GCM controller.
 
 Now let's look at a Machine:
@@ -342,12 +329,12 @@ As you might expect, the Machine `Spec` defines the blueprint for a node and the
 - Note that this Machine has two owner references - one to the TKC and one to the Cluster object. The first is created by GCM and the latter is created by CAPI.
 - The Bootstrap Data is a copy of the base64-encoded cloud-init kubeadm config from KubeadmConfig Status
 - Infrastructure reference is a reference to the corresponding WCPMachine for this Machine. The WCPMachine has an owner reference back to the Machine
-- The ProviderID is the biosUUID of the VM
-- The Version is the version of K8S that the node will run
-- The Status is fairly self-explanatory
-  - Bootstrap and Infrastructure Ready is a measure of whether the Bootstrap Data has been populated and whether the WCPMachine is available, respectively
-  - The Node Ref is data gathered from the API server of the new cluster
-Phase is `running` once the control plane node has successfully initialized. Valid options are `pending, running, terminating or failed`.
+- The `ProviderID` is the biosUUID of the VM
+- The `Version` is the version of K8S that the node will run
+- The `Status` is fairly self-explanatory
+  - `Bootstrap Ready` and `Infrastructure Ready` is a measure of whether the Bootstrap Data has been populated and whether the WCPMachine is available, respectively
+  - The `Node Ref` is data gathered from the API server of the new cluster
+Phase is `running` once the control plane node has successfully initialized. Valid options are `pending`, `running`, `terminating` or `failed`.
 
 #### CAPW Controller
 
@@ -531,7 +518,7 @@ Status:
 Events:      <none>
 ```
 
-Only thing worth noting is the Provider ID, which as you can see is the VM biosUUID. A unique infrastructure ID is part of the integration with CAPI and that's why it's part of the `Spec` and not the `Status`.
+Only thing worth noting is the `Provider ID`, which as you can see is the VM biosUUID. A unique infrastructure ID is part of the integration with CAPI and that's why it's part of the `Spec` and not the `Status`.
 
 #### Notes About Worker Machines
 
@@ -678,7 +665,7 @@ When a persistent volume is created for a Pod in a Guest Cluster, it must be att
 
 A request for a PersistentVolumeClaim from a particular StorageClass a Guest Cluster has access to causes a VMDK-based PersistentVolume and PersistentVolumeClaim to be created in the Supervisor Cluster. When a pod is deployed to the Guest Cluster that uses the PVC, it needs to be associated with the VirtualMachine that represents the node. This is actually a reconfiguration of the Spec of the VirtualMachine by the CSI control plane (via CNS integration) and the attach/detach is then handled by VM Operator.
 
-Note the Spec of the worker VirtualMachine running the pod:
+Note the addition of the `Volumes` clause in the `Spec` of the worker VirtualMachine running the pod:
 
 ```
 ...
@@ -703,13 +690,3 @@ Spec:
 
 This isn't necessarily explicitly related to lifecycle, but it's definitely interesting to note that VM configuration is all handled through the VIrtualMachine object.
 
-
-
-<p>
-<details>
-<summary>Click to see example</summary>
-<pre><code>
-...
-</code></pre>
-</details>
-</p>
