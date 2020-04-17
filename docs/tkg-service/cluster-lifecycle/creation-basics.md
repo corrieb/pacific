@@ -1,7 +1,7 @@
 - [The Basics](#the-basics)
   * [The 3 Layer Cake](#the-3-layer-cake)
   * [The Detailed View](#the-detailed-view)
-    + [GCM Layer](#gcm-layer)
+    + [TKG Layer](#TKG-layer)
       - [CAPI / CAPW object generation](#capi--capw-object-generation)
       - [TanzuKubernetesCluster](#tanzukubernetescluster)
     + [CAPI / CAPW Layer](#capi--capw-layer)
@@ -35,15 +35,15 @@ The TKG Service capability is heavily based around the Kubernetes [ClusterAPI](h
 As such, if you want to troubleshoot TKG Service Lifecycle issues, you'll spend most of the time actually interacting with the Supervisor. We'll touch on aspects of the Guest Cluster itself when we look at node debugging, security etc.
 
 ## The 3 Layer Cake
-At its most basic, cluster lifecycle is managed by 3 layers: **The Guest Cluster Manager (GCM)** layer, the **ClusterAPI (CAPI)** layer and the **VM Operator** layer.
+At its most basic, cluster lifecycle is managed by 3 layers: **The Tanzu Kubernetes Grid (TKG)** layer, the **ClusterAPI (CAPI)** layer and the **VM Operator** layer.
 
-<img src="images/3-layer-cake.png" width="499" height="619" />
+<img src="images/3-layer-cake.png" width="506" height="619" />
 
-**ClusterAPI** as the middle tier is the foundation around which everything else functions. The **VM Operator** layer supplies the plumbing and the **GCM layer** provides decoration and specialization. Spec is reconciled down the layers and Status is published back up the layers.
+**ClusterAPI** as the middle tier is the foundation around which everything else functions. The **VM Operator** layer supplies the plumbing and the **TKG layer** provides decoration and specialization. Spec is reconciled down the layers and Status is published back up the layers.
 
-The user starts by creating a **TanzuKubernetesCluster** (TKC) definition, which is reconciled by the GCM controller. GCM takes that TKC and turns it into CAPI / CAPW objects (CAPW is the ClusterAPI provider for Project Pacific). It also reads CAPI / CAPW status and reflects that back in TKC
+The user starts by creating a **TanzuKubernetesCluster** (TKC) definition, which is reconciled by the TKG controller. TKG takes that TKC and turns it into CAPI / CAPW objects (CAPW is the ClusterAPI provider for Project Pacific). It also reads CAPI / CAPW status and reflects that back in TKC
 
-The ClusterAPI layer is made up of 3 controllers and we'll look in more detail at what they do below. Fundamentally it's responsible for creating **VirtualMachine** definitions which contain the necessary configuration to stand up a cluster. Just like GCM, it also monitors the status of the VirtualMachine objects and reflects that back in the CAPI / CAPW objects.
+The ClusterAPI layer is made up of 3 controllers and we'll look in more detail at what they do below. Fundamentally it's responsible for creating **VirtualMachine** definitions which contain the necessary configuration to stand up a cluster. Just like TKG, it also monitors the status of the VirtualMachine objects and reflects that back in the CAPI / CAPW objects.
 
 The VM Operator layer is the declarative interface to vSphere. It creates objects such as **VirtualMachineImage** that show what images are available and reconciles VirtualMachine objects into actual VMs. It monitors the status of the real vSphere infrastructure and ensures that is reflected into the objects it manages.
 
@@ -53,15 +53,15 @@ As with everything, the reality is much more involved, although it follows the b
 
 <img src="images/tkg-service-lifecycle-detail.png" />
 
-### GCM Layer
+### TKG Layer
 
-As you can see at the bottom of this diagram, the TanzuKubernetesCluster is reconciled by the GCM controller.
+As you can see at the bottom of this diagram, the TanzuKubernetesCluster is reconciled by the TKG controller.
 
 _Note that each controller typically has 3 instances running with leader election enabled, so when we say "the controller" for any of these, we mean whichever one of 3 controllers that is currently acting as leader._
 
 #### CAPI / CAPW object generation
 
-GCM has to generate all of the input for the ClusterAPI layer. This is currently logically grouped as 3 YAML files.
+TKG has to generate all of the input for the ClusterAPI layer. This is currently logically grouped as 3 YAML files.
 
 - **Cluster.yaml** contains the definition of the Cluster itself. Note that it's split into two objects - the CAPI Cluster and the WCPCluster that augments it.
 - **Controlplane.yaml** contains the definition of the cluster control plane components. This consists of the following:
@@ -279,7 +279,7 @@ There are few interesting things worth calling out here:
 - You'll see this is where the Cluster Network settings are specified
 - The infrastructure reference to the WCPCluster is how the two are connected. WCPCluster also has an owner reference back to the Cluster
 - `APIEndpoints` is typically just one value - the IP address for connecting to the API Server. It can in theory be multiple values, but only if there isn't a load balancer
-- The rest of the status is just to indicate where the Cluster is in terms of its progress. That is all summarized in TKC by GCM controller.
+- The rest of the status is just to indicate where the Cluster is in terms of its progress. That is all summarized in TKC by TKG controller.
 
 Now let's look at a Machine:
 
@@ -343,7 +343,7 @@ As you might expect, the Machine `Spec` defines the blueprint for a node and the
 
 - Note the labels. They're all quite self-explanatory, but they're all meaningful for CAPI and should not be changed
 - The Machine has a finalizer just like Cluster to prevent it being deleted until the CAPI controller allows it
-- Note that this Machine has two owner references - one to the TKC and one to the Cluster object. The first is created by GCM and the latter is created by CAPI.
+- Note that this Machine has two owner references - one to the TKC and one to the Cluster object. The first is created by TKG and the latter is created by CAPI.
 - The Bootstrap Data is a copy of the base64-encoded cloud-init kubeadm config from KubeadmConfig Status
 - Infrastructure reference is a reference to the corresponding WCPMachine for this Machine. The WCPMachine has an owner reference back to the Machine
 - The `ProviderID` is the biosUUID of the VM
