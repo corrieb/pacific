@@ -209,9 +209,22 @@ Network settings in the common case will look just like the ones above. As it st
 
 Note the `serviceDomain` will be the postfix of the DNS domain name of any services created in the cluster
 
-### 2. CAPI / CAPW Object Creation
+### 2. ClusterAPI Object Creation
 
-The next phase in cluster lifecycle is the creation of the CAPI / CAPW objects by TKG. The only conceivable reason for failure of this milestone is if the TKG controller is not running for some reason.
+The next phase in cluster lifecycle is the creation of the CAPI / CAPW objects by TKG.
+
+If you see any entries in `Node Status` or `VM Status` in your TKC `Status`, ClusterAPI object creation succeeded. 
+
+You can also type the following to see the CAPI Cluster objects in your namespace:
+
+```
+$ kubectl get clusters -A
+
+NAME           PHASE
+test-cluster   provisioned
+```
+
+The only conceivable reason for failure of this milestone is if the TKG controller is not running for some reason.
 
 So how can we identify where these controllers are and check whether they're running?
 
@@ -223,7 +236,39 @@ vmware-system-tkg-controller-manager-986c97975-fjs96   2/2     Running   4      
 vmware-system-tkg-controller-manager-986c97975-gc4td   2/2     Running   6          2d1h
 vmware-system-tkg-controller-manager-986c97975-m68nj   2/2     Running   3          2d1h
 ```
-Here you can see the TKG controller pods running. Unfortunately the question of which pod is currently elected leader is opaque to this summary. It's usually obvious from the logs, but you have to _get_ the logs to see. One approach is to have a complex query such as this:
+Here you can see the TKG controller pods running. Unfortunately the question of which pod is currently elected leader is opaque to this summary. It's usually obvious from the logs, but you have to _get_ the logs to see.
+
+### 3. First Control Plane VirtualMachine is created
+
+Cluster creation always begins by the creation of a single control plane node. Even if multiple nodes are selected, the initial control plane node will be the one to which other nodes are joined. This is distinguished in Kubeadm by the `InitConfiguration` and `JoinConfiguration` types.
+
+You want to watch the `VM Status` of the TKG `Status`. You should see one of them go from `pending` to `created`
+
+You can also type the following to see the VirtualMachine objects in your namespace:
+
 ```
-`ns='vmware-system-tkg' kubectl get pods -n $ns --no-headers=true | awk '{print $1}' | xargs -I {} kubectl -n $ns logs {} manager | grep "986c97975\|became leader"`
+$ kubectl get virtualmachines -A
+
+NAME                               AGE
+test-cluster-control-plane-wc8bt   5m3s
 ```
+Just as with TKG, there are important controllers responsible for creating these VirtualMachine objects. You can find out more about these controllers and their roles [here](creation-basics.md)
+
+```
+$ kubectl get pods -n vmware-system-capw
+
+NAME                                                              READY   STATUS    RESTARTS   AGE
+vmware-system-capw-cabpk-controller-manager-78b4c4d679-8n94d      2/2     Running   4          2d2h
+vmware-system-capw-cabpk-controller-manager-78b4c4d679-c5nt6      2/2     Running   2          2d2h
+vmware-system-capw-cabpk-controller-manager-78b4c4d679-m7mbs      2/2     Running   3          2d2h
+vmware-system-capw-capi-controller-manager-6c4b7b97c9-dkr8b       2/2     Running   2          2d2h
+vmware-system-capw-capi-controller-manager-6c4b7b97c9-gzfpm       2/2     Running   5          2d2h
+vmware-system-capw-capi-controller-manager-6c4b7b97c9-sq6fk       2/2     Running   2          2d2h
+vmware-system-capw-v1alpha2-controller-manager-6ddb68b49b-7dn25   2/2     Running   4          2d2h
+vmware-system-capw-v1alpha2-controller-manager-6ddb68b49b-jxkzv   2/2     Running   1          2d2h
+vmware-system-capw-v1alpha2-controller-manager-6ddb68b49b-z5qwd   2/2     Running   7          2d2h
+```
+Here you can see 3 replicas each of the CAPI, CABPK and CAPW controllers. The ones marked `capw-v1alpha2-controller-manager` are the ones responsible for creating VirtualMachines.
+
+### 4. First Control Plane VirtualMachine is powered on
+
