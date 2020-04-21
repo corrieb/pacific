@@ -238,11 +238,17 @@ vmware-system-tkg-controller-manager-986c97975-m68nj   2/2     Running   3      
 ```
 Here you can see the TKG controller pods running. Unfortunately the question of which pod is currently elected leader is opaque to this summary. It's usually obvious from the logs, but you have to _get_ the logs to see.
 
+Note that the restart counts are non-zero. This is not necessaily indicative of a problem. Controllers lean on the container restart logic under certain circumstances if pre-conditions aren't met for initialization. However if the restart count seems out of proportion to the rest of the system, this could be indicative of a persistent issue.
+
+To view logs of a controller, type the following:
+
+`$ kubectl logs -n vmware-system-tkg vmware-system-tkg-controller-manager-986c97975-fjs96 manager`
+
 ### 3. First Control Plane VirtualMachine is created
 
 Cluster creation always begins by the creation of a single control plane node. Even if multiple nodes are selected, the initial control plane node will be the one to which other nodes are joined. This is distinguished in Kubeadm by the `InitConfiguration` and `JoinConfiguration` types.
 
-You want to watch the `VM Status` of the TKG `Status`. You should see one of them go from `pending` to `created`
+You want to watch the `VM Status` of the TKG `Status`. You should see one of them go from `pending` to `created` (or most likely, `powered on`).
 
 You can also type the following to see the VirtualMachine objects in your namespace:
 
@@ -272,3 +278,58 @@ Here you can see 3 replicas each of the CAPI, CABPK and CAPW controllers. The on
 
 ### 4. First Control Plane VirtualMachine is powered on
 
+Once the VirtualMachine object is created in the supervisor namespace, the VM operator controller should reconcile it, create a VM in vSphere with the supplied configuration and attempt to power it on.
+
+Just as in milestone 3, the simplest way to verify that the control plane machine has powered on is by looking the TKC `Status`. You should see one `VM Status` showing `powered on`.
+
+If after a period of time you don't see that happen, the two most likely error conditions are the following:
+
+#### Lack of compute resource
+
+The Guest Cluster nodes need to be allocated resource from the limits specified in the supervisor cluster namespace. If the VirtualMachineClass requested is Guaranteed, then the node VM will require a full reservation of CPU and memory. If that reservation cannot be satisfied, then the VM cannot be powered on. The VM operator controller will continue to try to power on the VM until resource becomes available.
+
+TBD: Show how to identify this error
+
+#### Issue with the VM Operator Controller
+
+Just like TKG, CAPI, CABPK and CAPW there are 3 VM operator controllers that are responsible for reconciling VirtualMachine objects into vSphere operations. You can find out more about these controllers and their roles [here](creation-basics.md) 
+
+```
+$ kubectl get pods -n vmware-system-vmop
+
+NAME                                                     READY   STATUS    RESTARTS   AGE
+vmware-system-vmop-controller-manager-64cd7dd57f-ckw5j   2/2     Running   0          3h55m
+vmware-system-vmop-controller-manager-64cd7dd57f-fvvk9   2/2     Running   0          3h55m
+vmware-system-vmop-controller-manager-64cd7dd57f-xfn2d   2/2     Running   4          3h55m
+```
+
+As with the other controllers, if they're running and the restart count doesn't seem excessive, they should be working.
+
+However note that the VM operator controllers need to be able to connect to and authenticate with the vCenter APIs. If there's a connectivity issue or an authentication issue, it would show up in the VM operator logs.
+
+### 5. First Control Plane Node has an IP Address
+
+Assuming the control plane node is booting, the next milestone is that it gets an IP address on the network. This will show as a VM being `ready` in the `VM Status` of the TKC object. 
+
+Note that a `VM Status` can be `ready` even if the kubeadm bootstrap fails. This is why the `VM Status` is distinct from `Node Status`. The former is a vSphere perspective and the latter is a K8S perspective.
+
+The control plane will have its own internal IP address and will be addressable externally via a load-balanced Virtual IP. While this isn't an in-depth look at networking, let's take a moment to examine how this is set up.
+
+```
+$ kubectl -n ben-test get services
+
+NAMESPACE  NAME                                 TYPE           CLUSTER-IP       EXTERNAL-IP      PORT(S)          AGE
+ben-test   test-cluster-control-plane-service   LoadBalancer   172.24.20.9      10.185.231.203   6443:31416/TCP   4h2m
+```
+This shows that there's an external load-balanced IP that maps to a supervisor namespace cluster-scoped service IP.
+
+Let look at the endpoints for the service:
+
+```
+$ kubectl -n ben-test get endpoints
+NAME                                 ENDPOINTS           AGE
+test-cluster-control-plane-service   172.26.0.226:6443   4h7m
+```
+This shows the IP address of the node as vSphere sees it - the IP assigned to the VM NIC. Note that this IP address is allocated from the same CIDR as native pods or VMs deployed to the namespace. This is not an externally-accessible IP, hence why we recommend that if you need a shell into a node, you do it [via a jumpbox pod deployed to the same namespace](https://docs.vmware.com/en/VMware-vSphere/7.0/vmware-vsphere-with-kubernetes/GUID-587E2181-199A-422A-ABBC-0A9456A70074.html).
+
+The CAPI Cluster has an `API Endpoints` field that should show the external IP for the cluster and this is also visible in the  TKC `Status`.
