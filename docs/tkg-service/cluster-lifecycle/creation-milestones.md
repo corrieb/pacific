@@ -1,3 +1,25 @@
+- [Cluster Creation Milestones](#cluster-creation-milestones)
+  * [The Happy Path](#the-happy-path)
+    + [Cluster Creation Milestones](#cluster-creation-milestones-1)
+    + [TKC Status](#tkc-status)
+    + [1. Validation of the TKC YAML](#1-validation-of-the-tkc-yaml)
+      - [Kubernetes Version](#kubernetes-version)
+      - [Node Configuration](#node-configuration)
+      - [Network Settings](#network-settings)
+    + [2. ClusterAPI Object Creation](#2-clusterapi-object-creation)
+    + [3. First Control Plane VirtualMachine is created](#3-first-control-plane-virtualmachine-is-created)
+    + [4. First Control Plane VirtualMachine is powered on](#4-first-control-plane-virtualmachine-is-powered-on)
+      - [Lack of compute resource](#lack-of-compute-resource)
+      - [Issue with the VM Operator Controller](#issue-with-the-vm-operator-controller)
+    + [5. First Control Plane Node has an IP Address](#5-first-control-plane-node-has-an-ip-address)
+    + [6. First Control Plane Node has a Running API Server](#6-first-control-plane-node-has-a-running-api-server)
+      - [Problem Starting Node Services](#problem-starting-node-services)
+      - [Problems With Network Reachability](#problems-with-network-reachability)
+    + [7. Post-Configuration Addons are Applied](#7-post-configuration-addons-are-applied)
+    + [8. Remaining Cluster VMs are Ready](#8-remaining-cluster-vms-are-ready)
+    + [9. Nodes Join the Cluster](#9-nodes-join-the-cluster)
+    + [10. You Can Log In!](#10-you-can-log-in)
+
 # Cluster Creation Milestones
 
 Before reading this section, first review [The Basics](creation-basics.md) to establish a good grounding of the various controllers, objects and the relationship between them
@@ -280,7 +302,7 @@ Here you can see 3 replicas each of the CAPI, CABPK and CAPW controllers. The on
 
 Once the VirtualMachine object is created in the supervisor namespace, the VM operator controller should reconcile it, create a VM in vSphere with the supplied configuration and attempt to power it on.
 
-Just as in milestone 3, the simplest way to verify that the control plane machine has powered on is by looking the TKC `Status`. You should see one `VM Status` showing `powered on`.
+Just as in [milestone 3](#3-first-control-plane-virtualmachine-is-created), the simplest way to verify that the control plane machine has powered on is by looking the TKC `Status`. You should see one `VM Status` showing `powered on`.
 
 If after a period of time you don't see that happen, the two most likely error conditions are the following:
 
@@ -408,14 +430,14 @@ Typically any errors in this phase will be an all-or-nothing problem, in that th
 
 ### 8. Remaining Cluster VMs are Ready
 
-Once milestone 6 is reached, you should see all of the rest of the VirtualMachines get created for the remaining control plane and worker nodes. This occurs concurrent with milestone 7.
+Once [milestone 6](#6-first-control-plane-node-has-a-running-api-server) is reached, you should see all of the rest of the VirtualMachines get created for the remaining control plane and worker nodes. This occurs concurrent with [milestone 7](#7-post-configuration-addons-are-applied).
 
 For each new node, you should see all of the same steps as we've seen for the control plane node:
 - A VM is created for the VirtualMachine - `VM Status = created`
 - The VM is powered on `VM Status = powered on`
 - The VM gets an IP `VM status = ready`
 
-The most likely reason for failure here is lack of namespace resources, as described in milestone 4.
+The most likely reason for failure here is lack of namespace resources, as described in [milestone 4](#4-first-control-plane-virtualmachine-is-powered-on).
 
 ### 9. Nodes Join the Cluster
 
@@ -427,7 +449,7 @@ If the node fails to join the cluster, there is an auto-remediation feature that
 
 Changing this value (assume you're authenticated as user that has permissions to edit it) will change the timeout.
 
-Debugging why a node may not have joined a cluster involves the same steps as milestone 6.
+Debugging why a node may not have joined a cluster involves the same steps as [milestone 6](#6-first-control-plane-node-has-a-running-api-server).
 
 ### 10. You Can Log In!
 
