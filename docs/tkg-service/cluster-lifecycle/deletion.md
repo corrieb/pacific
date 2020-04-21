@@ -71,12 +71,94 @@ This example here is a worker CAPI Machine object that has an owner. The owner i
 
 What this means in effect is that there is a graph of owner references that cascades down from TanzuKubernetesCluster all the way down to the VirtualMachines. The graph looks roughly like this:
 
+<img src="images/object-dependencies.png"/>
 
+These object dependencies are put in place by different controllers at different times in different reconciliation loops, but it's clear that the domino analogy holds - delete TKC and the deletion propagates right through the whole graph.
 
 #### Finalizers
 
+Kubernetes provides a mechanism that allows a controller to block object deletion until a dependency which may not be possible to express as a Kubernetes object has been properly cleaned up. This mechanism is called a Finalizer. If you look at many of the objects described in the graph above, you'll see finalizers.
 
+A good example of the benefit of using finalizers is in VirtualMachine. The VM operator controller doesn't allow a VirtualMachine to be deleted until it has confirmed that the real VM in vSphere has gone. This is _really_ important. Imagine if the vSphere VM deletion failed but the VirtualMachine object deletion succeeded. We'd end up with an orphaned VM that vSphere can't delete. 
 
+Similarly the CAPI controller won't remove its finalizer on a Machine until it's confident that the node has been drained. Again, this ensures that cleanup is conducted elegantly. If a VirtualMachine is deleted before the node drain has completed, the CAPI controller could timeout trying to drain a node that no longer exists.
 
+You can see the finalizers on an object in its `Metadata` just above `Owner References`:
 
+```
+Finalizers:
+    virtualmachine.vmoperator.vmware.com
+```
+#### Deletion Timestamp
 
+So how do you know if an object in Kubernetes is in the process of being deleted? The answer is simple - it has a `Deletion Timestamp`. If it does not have a `Deletion Timestamp`, it has not yet been deleted. 
+
+Given the role of Finalizers described above, it's perfectly normal for an object to have a `Deletion Timestamp` and a `Finalizer` and for it to still be visible in the API Server. Once the Finalizer is removed, it can finally be garbage collected.
+
+### Monitoring Deletion
+
+The simplest way to monitor deletion is to have a `kubectl get` command that includes all of principle objects in the depdendency graph and watch them slowly get garbage collected.
+
+An example would be:
+
+```
+$ kubectl -n ben-test get tkc,cluster,machine,wcpmachine,virtualmachine,machinedeployment,machineset,wcpmachinetemplate,kubeadmconfigtemplate,configmap,secret,vnet
+
+NAME                                                       CONTROL PLANE   WORKER   DISTRIBUTION                     AGE   PHASE
+tanzukubernetescluster.run.tanzu.vmware.com/test-cluster   3               1        v1.16.8+vmware.1-tkg.3.60d2ffd   10h   running
+
+NAME                                    PHASE
+cluster.cluster.x-k8s.io/test-cluster   provisioned
+
+NAME                                                                   PROVIDERID                                       PHASE
+machine.cluster.x-k8s.io/test-cluster-control-plane-fpk68              vsphere://421bc5bf-8582-d469-1ea8-54da8e032c9b   running
+machine.cluster.x-k8s.io/test-cluster-control-plane-fv7m4              vsphere://421b11b2-6b7e-8fb0-84f0-c397949a810a   running
+machine.cluster.x-k8s.io/test-cluster-control-plane-lc8dk              vsphere://421b4ae5-7184-4f1a-a000-a3aefc81003a   running
+machine.cluster.x-k8s.io/test-cluster-workers-hphzf-54569b9cb4-pwz9k   vsphere://421b55a2-9ac3-8712-f0e2-412a9a8cb21e   running
+
+NAME                                                                            PROVIDERID                                       IPADDR
+wcpmachine.infrastructure.cluster.vmware.com/test-cluster-control-plane-fpk68   vsphere://421bc5bf-8582-d469-1ea8-54da8e032c9b   172.26.0.228
+wcpmachine.infrastructure.cluster.vmware.com/test-cluster-control-plane-fv7m4   vsphere://421b11b2-6b7e-8fb0-84f0-c397949a810a   172.26.0.226
+wcpmachine.infrastructure.cluster.vmware.com/test-cluster-control-plane-lc8dk   vsphere://421b4ae5-7184-4f1a-a000-a3aefc81003a   172.26.0.229
+wcpmachine.infrastructure.cluster.vmware.com/test-cluster-workers-2bflr-h9rws   vsphere://421b55a2-9ac3-8712-f0e2-412a9a8cb21e   172.26.0.227
+
+NAME                                                                               AGE
+virtualmachine.vmoperator.vmware.com/test-cluster-control-plane-fpk68              10h
+virtualmachine.vmoperator.vmware.com/test-cluster-control-plane-fv7m4              10h
+virtualmachine.vmoperator.vmware.com/test-cluster-control-plane-lc8dk              10h
+virtualmachine.vmoperator.vmware.com/test-cluster-workers-hphzf-54569b9cb4-pwz9k   10h
+
+NAME                                                            AGE
+machinedeployment.cluster.x-k8s.io/test-cluster-workers-hphzf   10h
+
+NAME                                                                AGE
+machineset.cluster.x-k8s.io/test-cluster-workers-hphzf-54569b9cb4   10h
+
+NAME                                                                              AGE
+wcpmachinetemplate.infrastructure.cluster.vmware.com/test-cluster-workers-2bflr   10h
+
+NAME                                                                          AGE
+kubeadmconfigtemplate.bootstrap.cluster.x-k8s.io/test-cluster-workers-klqcn   10h
+
+NAME                                                    DATA   AGE
+configmap/test-cluster-control-plane-fpk68-cloud-init   4      10h
+configmap/test-cluster-control-plane-fv7m4-cloud-init   4      10h
+configmap/test-cluster-control-plane-lc8dk-cloud-init   4      10h
+configmap/test-cluster-workers-2bflr-h9rws-cloud-init   4      10h
+
+NAME                                    TYPE                                  DATA   AGE
+secret/default-token-km2hm              kubernetes.io/service-account-token   3      10h
+secret/test-cluster-ca                  Opaque                                2      10h
+secret/test-cluster-ccm-token-22mdd     kubernetes.io/service-account-token   3      10h
+secret/test-cluster-encryption          Opaque                                1      10h
+secret/test-cluster-etcd                Opaque                                2      10h
+secret/test-cluster-kubeconfig          Opaque                                1      10h
+secret/test-cluster-proxy               Opaque                                2      10h
+secret/test-cluster-pvcsi-token-twj78   kubernetes.io/service-account-token   3      10h
+secret/test-cluster-sa                  Opaque                                2      10h
+secret/test-cluster-ssh                 kubernetes.io/ssh-auth                1      10h
+secret/test-cluster-ssh-password        Opaque                                1      10h
+
+NAME                                          AGE
+virtualnetwork.vmware.com/test-cluster-vnet   10h
+```
