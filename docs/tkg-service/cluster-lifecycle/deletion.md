@@ -1,3 +1,18 @@
+- [Cluster Deletion](#cluster-deletion)
+  * [Summary](#summary)
+    + [How To Delete A Cluster](#how-to-delete-a-cluster)
+      - [Delete is a Blocking Call - Give it Time!](#delete-is-a-blocking-call---give-it-time)
+      - [Deleting a Namespace](#deleting-a-namespace)
+      - [Deletion Controls](#deletion-controls)
+    + [The Object Graph](#the-object-graph)
+      - [Owner References](#owner-references)
+      - [Dependency Graph](#dependency-graph)
+      - [Finalizers](#finalizers)
+      - [Deletion Timestamp](#deletion-timestamp)
+    + [Monitoring Deletion](#monitoring-deletion)
+  * [Troubleshooting](#troubleshooting)
+    + [Orphaned Objects](#orphaned-objects)
+
 # Cluster Deletion
 
 Before reading this section, it's worthwhile reviewing [The Basics](creation-basics.md) to establish a good grounding of the various controllers, objects and the relationship between them
@@ -68,6 +83,8 @@ You can see an owner reference by typing `kubectl describe <object>` and looking
     UID:                   f6bd0f3d-ba58-409c-9ffe-1061d531e0ae
 ```
 This example here is a worker CAPI Machine object that has an owner. The owner is a MachineSet and the owner reference gives enough information for any caller to be able to identify the MachineSet object. If this MachineSet were to be deleted, the CAPI Machines it owns will also be deleted.
+
+#### Dependency Graph
 
 What this means in effect is that there is a graph of owner references that cascades down from TanzuKubernetesCluster all the way down to the VirtualMachines. The graph looks roughly like this:
 
@@ -162,3 +179,31 @@ secret/test-cluster-ssh-password        Opaque                                1 
 NAME                                          AGE
 virtualnetwork.vmware.com/test-cluster-vnet   10h
 ```
+
+## Troubleshooting
+
+The one issue that seems to crop up most often during deletion is that it gets stuck or appears to have hung. This is a particularly irritating User Experience from the vSphere UI where it's completely opaque as to what's going on.
+
+Note that there are certain error conditions in which it can take up to 30 minutes to successfully delete a cluster. An example is if the CAPI controller is trying to drain a node that's deleted, it will take it around 15 minutes before it gives up. By that point, the control loop polling for workload namespace deletion may have gone through exponential backoff and it takes a further 10 minutes to realize that the namespace has gone. 
+
+- Tip 1: Be patient with deletion and give it time
+- Tip 2: Delete a TKC first before deleting a namespace
+- Tip 3: If a cluster really seems to have hung, run the `kubectl get` query in monitoring deletion above
+
+Have a look at the `kubectl describe` output of the objects. Do you still see Finalizers? If so, then for some reason the controllers that should have removed the finalizers have either failed or are waiting for a precondition before removing them. The [graph above](#dependency-graph) above should be helpful in understanding the order in which objects should be deleted.
+
+Looking at the controller logs may give you more insight into why the controller is failing to reconcile the deletion and remove the finalizer.
+
+`kubectl logs -n <namespace> <controller-pod> manager`
+
+### Orphaned Objects
+
+If you believe that an object has been orphaned - in other words, it has somehow managed to find itself outside of the dependency graph, there two possible states it can be in:
+
+1. It has been deleted, but has a finalizer and therefore isn't being garbage collected
+2. It hasn't yet been deleted
+
+To fix either case, you will need to authenticate as a user with admin privileges (eg. `kubernetes-admin` and either explicitly delete `kubectl delete` the object or edit it `kubectl edit` to remove the finalizer manually.
+
+Deleting the namespace from the vSphere UI does not currently forcibly remove finalizers and so if a controller stops running, it's possible for it to block deletion of the namespace by failing to remove the finalizers.
+
