@@ -313,7 +313,7 @@ Assuming the control plane node is booting, the next milestone is that it gets a
 
 Note that a `VM Status` can be `ready` even if the kubeadm bootstrap fails. This is why the `VM Status` is distinct from `Node Status`. The former is a vSphere perspective and the latter is a K8S perspective.
 
-The control plane will have its own internal IP address and will be addressable externally via a load-balanced Virtual IP. While this isn't an in-depth look at networking, let's take a moment to examine how this is set up.
+The control plane VM will have its own internal IP address and will be addressable externally via a load-balanced Virtual IP. While this isn't an in-depth look at networking, let's take a moment to examine how this is set up.
 
 ```
 $ kubectl -n ben-test get services
@@ -330,6 +330,109 @@ $ kubectl -n ben-test get endpoints
 NAME                                 ENDPOINTS           AGE
 test-cluster-control-plane-service   172.26.0.226:6443   4h7m
 ```
-This shows the IP address of the node as vSphere sees it - the IP assigned to the VM NIC. Note that this IP address is allocated from the same CIDR as native pods or VMs deployed to the namespace. This is not an externally-accessible IP, hence why we recommend that if you need a shell into a node, you do it [via a jumpbox pod deployed to the same namespace](https://docs.vmware.com/en/VMware-vSphere/7.0/vmware-vsphere-with-kubernetes/GUID-587E2181-199A-422A-ABBC-0A9456A70074.html).
+
+This shows the IP address of the node as vSphere sees it - the IP assigned to the VM NIC. Note that this IP address is allocated from the same CIDR as native pods or VMs deployed to the supervisor namespace. This is not an externally-accessible IP, hence why we recommend that if you need a shell into a node, you do it [via a jumpbox pod deployed to the same namespace](https://docs.vmware.com/en/VMware-vSphere/7.0/vmware-vsphere-with-kubernetes/GUID-587E2181-199A-422A-ABBC-0A9456A70074.html).
 
 The CAPI Cluster has an `API Endpoints` field that should show the external IP for the cluster and this is also visible in the  TKC `Status`.
+
+You should be able to verify control plane health by running:
+
+`curl -k https://<node IP>:6443/healthz`
+
+### 6. First Control Plane Node has a Running API Server
+
+This next step is a crucial milestone and there are many critical services that have to be successfully stood up inside the node for the API Server to be running successfully and be reachable.
+
+Watch for the `Node Status` of the control plane node in the TKC `Status`. It should transition from `pending` (cannot yet reach the API server) to `notready` (can reach the API server, but the node has not yet finished initializing) to `ready` (the API server is up and ready to service requests).
+
+Once the first control plane node is `ready`, you should see a lot of other activity occur, including addons being applied and other VirtualMachines being created. We'll look at those in the subsequent milestones.
+
+#### Problem Starting Node Services
+
+This document is not intended to be an in-depth look at node debugging, but if the node doesn't show as being `ready` after a period of time, there may be something inside of the node itself that didn't initialize properly.
+
+To troubleshoot the node, you can get onto it using the jumpbox method described [here](https://docs.vmware.com/en/VMware-vSphere/7.0/vmware-vsphere-with-kubernetes/GUID-587E2181-199A-422A-ABBC-0A9456A70074.html).
+
+```
+$ kubectl exec -it -n ben-test jumpbox /usr/bin/ssh vmware-system-user@172.26.0.228
+$ PS1="node-$ "            # For some reason exec has an 80 char limit, so make the prompt smaller
+
+# Look to see whether the cloud init completed successfully
+node-$ tail /var/log/cloud-init.log
+...
+2020-04-20 20:16:30,676 - util.py[DEBUG]: cloud-init mode 'modules' took 52.455 seconds (52.46)
+2020-04-20 20:16:30,676 - handlers.py[DEBUG]: finish: modules-final: SUCCESS: running modules for final
+
+# Look at what's running on the node
+node-$ ps -e | grep kube
+ 1622 ?        00:11:05 kubelet
+ 1992 ?        00:13:08 kube-apiserver
+ 2000 ?        00:00:31 kube-controller
+ 2087 ?        00:00:58 kube-scheduler
+ 2097 ?        00:00:35 kube-proxy
+
+# Look at the containers running on the node
+node-$ sudo docker ps --format '{{.Names}}'
+k8s_guest-cluster-auth-service_guest-cluster-auth-svc-vlf42_vmware-system-auth_51ddc695-cb29-4a72-974f-4a330233046c_0
+k8s_POD_guest-cluster-auth-svc-vlf42_vmware-system-auth_51ddc695-cb29-4a72-974f-4a330233046c_0
+k8s_calico-node_calico-node-4nwfn_kube-system_7468c6a4-b25f-4ab9-b809-a0f9bb61d2e1_0
+k8s_etcd_etcd-test-cluster-e2e-script-control-plane-fpk68_kube-system_a09b7c36381d86c52f282feede806e53_0
+k8s_POD_etcd-test-cluster-e2e-script-control-plane-fpk68_kube-system_a09b7c36381d86c52f282feede806e53_0
+k8s_kube-proxy_kube-proxy-q5w9w_kube-system_960213e3-2c06-4334-8b63-ab8358687dd4_0
+k8s_kube-scheduler_kube-scheduler-test-cluster-e2e-script-control-plane-fpk68_kube-system_e4d8d889b88c177cc89089bbbe60f639_0
+k8s_kube-apiserver_kube-apiserver-test-cluster-e2e-script-control-plane-fpk68_kube-system_9ad88a4bfee23a52106d684bb1e5ce99_0
+k8s_kube-controller-manager_kube-controller-manager-test-cluster-e2e-script-control-plane-fpk68_kube-system_f3744085baebe41ae46019465a0101ef_0
+k8s_POD_calico-node-4nwfn_kube-system_7468c6a4-b25f-4ab9-b809-a0f9bb61d2e1_0
+k8s_POD_kube-scheduler-test-cluster-e2e-script-control-plane-fpk68_kube-system_e4d8d889b88c177cc89089bbbe60f639_0
+k8s_POD_kube-apiserver-test-cluster-e2e-script-control-plane-fpk68_kube-system_9ad88a4bfee23a52106d684bb1e5ce99_0
+k8s_POD_kube-controller-manager-test-cluster-e2e-script-control-plane-fpk68_kube-system_f3744085baebe41ae46019465a0101ef_0
+k8s_POD_kube-proxy-q5w9w_kube-system_960213e3-2c06-4334-8b63-ab8358687dd4_0
+
+# Look at the kubelet logs
+node-$ sudo journalctl -u kubelet | tail -n 10
+...
+```
+There will be a more in-depth document specifically on node debugging to follow
+
+#### Problems With Network Reachability
+
+The supervisor control plane VMs need to be able to reach the guest cluster control plane VM via both its internal IP address and its external IP address. If either of those are not reachable - for example if the supervisor VM is on a different ESXi host to the control plane VM and there are issues with traffic between the ESXi hosts due to vLAN issues or firewall rules, the guest cluster control plane won't be able to complete its initialization.
+
+### 7. Post-Configuration Addons are Applied
+
+Once the TKG controller sees that the node is `ready`, it will attempt to apply the various post-configuration steps to the cluster. You can see these steps listed in the `Addons` field in TKC `Status`.
+
+You're looking for all of those steps to go from `pending` to `ready` and the `Name` of the particular addon that's been applied. If there's an error in applying the add-on, it will be shown in the TKC `Status` for that addon. 
+
+Typically any errors in this phase will be an all-or-nothing problem, in that they will all apply cleanly or there will be some fundamental issue preventing any of them from applying. However, TKG controller will continue to retry applying in the case of failure, so it's not uncommon to see an initial error followed by success. If a persistent error occurs, the error should given enough information to continue to troubleshoot.
+
+### 8. Remaining Cluster VMs are Ready
+
+Once milestone 6 is reached, you should see all of the rest of the VirtualMachines get created for the remaining control plane and worker nodes. This occurs concurrent with milestone 7.
+
+For each new node, you should see all of the same steps as we've seen for the control plane node:
+- A VM is created for the VirtualMachine - `VM Status = created`
+- The VM is powered on `VM Status = powered on`
+- The VM gets an IP `VM status = ready`
+
+The most likely reason for failure here is lack of namespace resources, as described in milestone 4.
+
+### 9. Nodes Join the Cluster
+
+If a node initializes correctly, it should successfully join the cluster. You can tell if a node has joined the cluster by looking at the `Node Status` in the TKC `Status`. The node should show go from `pending` to `notready` to `ready`.
+
+If the node fails to join the cluster, there is an auto-remediation feature that will eventually kill the node and recreate it. The default timeout for this feature is 60 minutes and is visible by running:
+
+`kubectl -n vmware-system-tkg describe configmap vmware-system-tkg-node-remediation-config`
+
+Changing this value (assume you're authenticated as user that has permissions to edit it) will change the timeout.
+
+Debugging why a node may not have joined a cluster involves the same steps as milestone 6.
+
+### 10. You Can Log In!
+
+A developer or cluster admin authenticates with a Guest Cluster using the vSphere Kubectl plugin as described in the user documentation [here](https://docs.vmware.com/en/VMware-vSphere/7.0/vmware-vsphere-with-kubernetes/GUID-2E03ABA4-711E-46DC-8F4B-7FC19C236482.html)
+
+TBD: What can go wrong here?
+
+
