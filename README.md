@@ -15,7 +15,7 @@ I have been deeply involved in this project and have contributed to the architec
 ## Useful Links:
 
 ### Documentation 
-- User documentation https://docs.vmware.com/en/VMware-vSphere/7.0/vmware-vsphere-with-kubernetes
+- User documentation https://docs.vmware.com/en/VMware-vSphere/7.0/vmware-vsphere-with-kubernetes/GUID-152BE7D2-E227-4DAA-B527-557B564D9718.html
 
 ### Blogs
 - Blog on scheduling native pods https://frankdenneman.nl/2020/03/20/scheduling-vsphere-pods/
