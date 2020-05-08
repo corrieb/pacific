@@ -1,0 +1,60 @@
+@startuml addon-reconciliation
+
+!define KubeadmAddOn LightSkyBlue
+!define StandardAddOn PaleGreen
+skinparam activityDiamondBackgroundColor AliceBlue
+
+start;
+
+floating note left
+  Error handling, unless of a particular interest, is omitted.
+  Errors during reconciliation are generally handled by setting the error
+  in the add-on status. Once all reconciliations are complete
+  if there is any error, reconciliation is requeued.
+end note
+
+#Gainsboro:Retrieve Distribution Version;
+
+fork
+  #KubeadmAddOn:Reconcile CoreDNS;
+  partition "Reconcile Kubeadm-provided add-on" #KubeadmAddOn {
+    :Retrieve container version from distribution version;
+    :Update container image version;
+    :Apply update strategy / node selectors;
+    :Update object in workload cluster;
+  }
+fork again
+  #KubeadmAddOn:Reconcile kube-proxy;
+fork again
+  #StandardAddOn:Reconcile CNI;
+  partition "Reconcile standard add-on" #StandardAddOn {
+    :Unmarshal add-on manifests from VirtualMachineImage;
+
+    while (remaning objects?) is (yes)
+      :Apply update strategy / node selectors if an application type;
+
+      if (object exists in workload cluster?) then (yes)
+        :Preserve generated tokens for ServiceAccounts;
+        :Merge annotations from the existing object;
+        :Update the object;
+      else (no)
+        :Create the object;
+      endif
+    endwhile (no)
+  }
+fork again
+  #StandardAddOn:Reconcile CSI;
+fork again
+  #StandardAddOn:Reconcile CPI;
+fork again
+  #StandardAddOn:Reconcile Authentication Service;
+endfork
+
+if (error has occurred in any reconciliation?) then (no)
+  stop
+else (yes)
+  #Crimson:Error;
+  detach
+endif
+
+@enduml

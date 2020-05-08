@@ -1,0 +1,59 @@
+@startuml worker-reconciliation
+
+skinparam activityDiamondBackgroundColor AliceBlue
+
+start;
+
+floating note left
+  Error handling, unless of a particular interest, is omitted.
+  Errors in reconciliation generally are handled by a requeue.
+end note
+
+#Gainsboro:Retrieve Distribution Version;
+
+#Gainsboro:Cluster Reconciliation;
+
+#Gainsboro:Control Plane Reconciliation;
+
+:Retrieve all worker MachineDeployments for the cluster;
+:Filter out MachineDeployments that the controller does not own or are being deleted;
+
+partition "Scale" {
+  while (MachineDeployments are missing?) is (yes)
+    #edf7de:Generate Objects;
+    :Create WCPMachineTemplate;
+    :Create KubeadmConfigTemplate;
+    :Create MachineDeployment;
+  endwhile (no)
+}
+
+partition "Sync" {
+  while (existing MachineDeployments remain?) is (yes)
+    #edf7de:Generate Objects;
+
+    if (upgrading?) then (yes)
+      :Retrieve all control plane Machines;
+      while (Machines remain?) is (yes)
+        if (Machine Kubernetes version is less than MachineDeployment Kubernetes version) then (yes)
+          #LightGreen:Requeue;
+          detach
+        else (no)
+        endif
+      endwhile (no)
+
+      :Create new WCPMachineTemplate;
+      :Create new KubeadmConfigTemplate;
+      :Rewire references in MachineDeployment;
+    else (no)
+      :Reconcile WCPMachineTemplate;
+      :Reconcile KubeadmJoinConfig;
+      :Reconcile MachineDeployment;
+    endif
+  endwhile
+}
+
+:Clean up orphaned WCPMachineTemplate and KubeadmConfigTemplate resulting from rolling update;
+
+stop
+
+@enduml
